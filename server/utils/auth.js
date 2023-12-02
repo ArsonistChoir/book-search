@@ -1,39 +1,41 @@
-const jwt = require('jsonwebtoken');
+const { ApolloServer, gql } = require('apollo-server');
+const { authMiddleware } = require('./yourAuthFile');
 
-// set token secret and expiration date
-const secret = 'mysecretsshhhhh';
-const expiration = '2h';
+// Define your GraphQL schema
+const typeDefs = gql`
+  type Query {
+    protectedRoute: String
+  }
+`;
 
-module.exports = {
-  // function for our authenticated routes
-  authMiddleware: function (req, res, next) {
-    // allows token to be sent via  req.query or headers
-    let token = req.query.token || req.headers.authorization;
-
-    // ["Bearer", "<tokenvalue>"]
-    if (req.headers.authorization) {
-      token = token.split(' ').pop().trim();
-    }
-
-    if (!token) {
-      return res.status(400).json({ message: 'You have no token!' });
-    }
-
-    // verify token and get user data out of it
-    try {
-      const { data } = jwt.verify(token, secret, { maxAge: expiration });
-      req.user = data;
-    } catch {
-      console.log('Invalid token');
-      return res.status(400).json({ message: 'invalid token!' });
-    }
-
-    // send to next endpoint
-    next();
-  },
-  signToken: function ({ username, email, _id }) {
-    const payload = { username, email, _id };
-
-    return jwt.sign({ data: payload }, secret, { expiresIn: expiration });
+// Resolver for the protected route
+const resolvers = {
+  Query: {
+    protectedRoute: (parent, args, context) => {
+      // Access user data from context.user
+      if (context.user) {
+        return `You have access to this protected route, ${context.user.username}!`;
+      } else {
+        throw new Error('Unauthorized: You need to be logged in.');
+      }
+    },
   },
 };
+
+// Create Apollo Server instance with context function
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  context: ({ req }) => {
+    // Use authMiddleware to authenticate the request
+    authMiddleware(req, null, () => {}); // Call with null response and a dummy next function
+
+    // Access user data from req.user in the context
+    return { user: req.user };
+  },
+});
+
+// Start the server
+server.listen().then(({ url }) => {
+  console.log(`Server is running at ${url}`);
+});
